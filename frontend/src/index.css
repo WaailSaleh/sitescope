@@ -1,0 +1,166 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0a0a0a;
+  --surface: #111111;
+  --surface-2: #161616;
+  --border: #1e1e1e;
+  --border-bright: #2a2a2a;
+  --green: #00ff88;
+  --green-dim: #00cc6a;
+  --green-glow: rgba(0, 255, 136, 0.15);
+  --amber: #ffb800;
+  --amber-dim: #cc9400;
+  --red: #ff4455;
+  --red-dim: #cc3344;
+  --blue: #4488ff;
+  --muted: #555555;
+  --text: #c8c8c8;
+  --text-dim: #888888;
+  --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scanline overlay effect */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* Terminal-style selection */
+::selection {
+  background: var(--green-glow);
+  color: var(--green);
+}
+
+.glow-green {
+  box-shadow: 0 0 8px var(--green-glow), 0 0 24px rgba(0, 255, 136, 0.05);
+}
+
+.glow-text-green {
+  text-shadow: 0 0 8px var(--green-glow);
+}
+
+.border-terminal {
+  border: 1px solid var(--border);
+}
+
+.border-terminal-bright {
+  border: 1px solid var(--border-bright);
+}
+
+/* Animated cursor */
+.cursor::after {
+  content: '█';
+  color: var(--green);
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Risk badge colors */
+.badge-high {
+  background: rgba(255, 68, 85, 0.15);
+  color: var(--red);
+  border: 1px solid rgba(255, 68, 85, 0.3);
+}
+
+.badge-medium {
+  background: rgba(255, 184, 0, 0.15);
+  color: var(--amber);
+  border: 1px solid rgba(255, 184, 0, 0.3);
+}
+
+.badge-low {
+  background: rgba(68, 136, 255, 0.15);
+  color: var(--blue);
+  border: 1px solid rgba(68, 136, 255, 0.3);
+}
+
+.badge-ok {
+  background: rgba(0, 255, 136, 0.1);
+  color: var(--green);
+  border: 1px solid rgba(0, 255, 136, 0.2);
+}
+
+.tab-active {
+  color: var(--green);
+  border-bottom: 1px solid var(--green);
+  text-shadow: 0 0 8px var(--green-glow);
+}
+
+.tab-inactive {
+  color: var(--text-dim);
+}
+
+.tab-inactive:hover {
+  color: var(--text);
+}
+
+/* Scan progress animation */
+@keyframes progressScan {
+  0% { width: 0%; }
+  100% { width: 100%; }
+}
+
+.progress-bar {
+  animation: progressScan 3s ease-in-out infinite;
+}
+
+/* Input focus glow */
+input:focus {
+  outline: none;
+  border-color: var(--green) !important;
+  box-shadow: 0 0 0 1px rgba(0, 255, 136, 0.2), 0 0 12px rgba(0, 255, 136, 0.05);
+}
+
+/* Code/pre blocks */
+pre, code {
+  font-family: var(--font-mono);
+}
+
+/* Collapsible sections */
+.collapsible-content {
+  overflow: hidden;
+  transition: max-height 0.2s ease-out;
+}

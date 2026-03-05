@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sitescope-config
+  namespace: sitescope
+data:
+  DB_PATH: "/app/data/sitescope.db"
+  CORS_ORIGINS: "https://sitescope.example.com"
+  RATE_LIMIT_MAX: "10"
+  RATE_LIMIT_WINDOW: "60"
+  IP_RATE_LIMIT_MAX: "30"
