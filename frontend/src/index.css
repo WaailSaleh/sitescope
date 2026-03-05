@@ -2,6 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Design tokens ───────────────────────────────────────────────── */
 :root {
   --bg: #0a0a0a;
   --surface: #111111;
@@ -20,9 +21,20 @@
   --text: #c8c8c8;
   --text-dim: #888888;
   --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+
+  /* Layout */
+  --content-max: 768px;   /* base max-width for content */
+  --page-px: 1rem;        /* horizontal page padding */
 }
 
-* {
+/* Responsive layout tokens */
+@media (min-width: 640px)  { :root { --page-px: 1.5rem; } }
+@media (min-width: 1024px) { :root { --page-px: 2.5rem; } }
+@media (min-width: 1536px) { :root { --content-max: 900px; --page-px: 3rem; } }
+@media (min-width: 2560px) { :root { --content-max: 1100px; --page-px: 4rem; } }
+
+/* ── Reset ───────────────────────────────────────────────────────── */
+*, *::before, *::after {
   box-sizing: border-box;
 }
 
@@ -32,19 +44,18 @@ html, body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-mono);
-  font-size: 13px;
+  /* Fluid font: 12px @ 320px → 14px @ 1440px */
+  font-size: clamp(12px, 0.75rem + 0.25vw, 14px);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scanline overlay effect */
+/* ── Scanline overlay ────────────────────────────────────────────── */
 body::before {
   content: '';
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background: repeating-linear-gradient(
     0deg,
     transparent,
@@ -56,35 +67,22 @@ body::before {
   z-index: 9999;
 }
 
-::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
+/* ── Scrollbar ───────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
-/* Terminal-style selection */
-::selection {
-  background: var(--green-glow);
-  color: var(--green);
-}
+/* Hide scrollbar for tab bar on mobile */
+.tabs-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.tabs-scroll::-webkit-scrollbar { display: none; }
 
-.glow-green {
-  box-shadow: 0 0 8px var(--green-glow), 0 0 24px rgba(0, 255, 136, 0.05);
-}
+/* ── Selection ───────────────────────────────────────────────────── */
+::selection { background: var(--green-glow); color: var(--green); }
 
-.glow-text-green {
-  text-shadow: 0 0 8px var(--green-glow);
-}
-
-.border-terminal {
-  border: 1px solid var(--border);
-}
-
-.border-terminal-bright {
-  border: 1px solid var(--border-bright);
-}
+/* ── Utilities ───────────────────────────────────────────────────── */
+.glow-green { box-shadow: 0 0 8px var(--green-glow), 0 0 24px rgba(0, 255, 136, 0.05); }
+.glow-text-green { text-shadow: 0 0 8px var(--green-glow); }
 
 /* Animated cursor */
 .cursor::after {
@@ -98,69 +96,30 @@ body::before {
   50% { opacity: 0; }
 }
 
-/* Risk badge colors */
-.badge-high {
-  background: rgba(255, 68, 85, 0.15);
-  color: var(--red);
-  border: 1px solid rgba(255, 68, 85, 0.3);
-}
+/* ── Risk / status badges ────────────────────────────────────────── */
+.badge-high   { background: rgba(255,68,85,0.15);  color: var(--red);   border: 1px solid rgba(255,68,85,0.3); }
+.badge-medium { background: rgba(255,184,0,0.15); color: var(--amber); border: 1px solid rgba(255,184,0,0.3); }
+.badge-low    { background: rgba(68,136,255,0.15); color: var(--blue);  border: 1px solid rgba(68,136,255,0.3); }
+.badge-ok     { background: rgba(0,255,136,0.10);  color: var(--green); border: 1px solid rgba(0,255,136,0.2); }
 
-.badge-medium {
-  background: rgba(255, 184, 0, 0.15);
-  color: var(--amber);
-  border: 1px solid rgba(255, 184, 0, 0.3);
-}
-
-.badge-low {
-  background: rgba(68, 136, 255, 0.15);
-  color: var(--blue);
-  border: 1px solid rgba(68, 136, 255, 0.3);
-}
-
-.badge-ok {
-  background: rgba(0, 255, 136, 0.1);
-  color: var(--green);
-  border: 1px solid rgba(0, 255, 136, 0.2);
-}
-
+/* ── Tabs ────────────────────────────────────────────────────────── */
 .tab-active {
   color: var(--green);
   border-bottom: 1px solid var(--green);
   text-shadow: 0 0 8px var(--green-glow);
 }
+.tab-inactive { color: var(--text-dim); }
+.tab-inactive:hover { color: var(--text); }
 
-.tab-inactive {
-  color: var(--text-dim);
-}
-
-.tab-inactive:hover {
-  color: var(--text);
-}
-
-/* Scan progress animation */
-@keyframes progressScan {
-  0% { width: 0%; }
-  100% { width: 100%; }
-}
-
-.progress-bar {
-  animation: progressScan 3s ease-in-out infinite;
-}
-
-/* Input focus glow */
+/* ── Input focus glow ────────────────────────────────────────────── */
 input:focus {
   outline: none;
-  border-color: var(--green) !important;
-  box-shadow: 0 0 0 1px rgba(0, 255, 136, 0.2), 0 0 12px rgba(0, 255, 136, 0.05);
 }
 
-/* Code/pre blocks */
-pre, code {
-  font-family: var(--font-mono);
-}
+/* ── Code blocks ─────────────────────────────────────────────────── */
+pre, code { font-family: var(--font-mono); }
 
-/* Collapsible sections */
-.collapsible-content {
-  overflow: hidden;
-  transition: max-height 0.2s ease-out;
+/* ── Mobile touch targets ────────────────────────────────────────── */
+@media (max-width: 639px) {
+  button { min-height: 36px; }
 }
