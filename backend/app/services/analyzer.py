@@ -176,68 +176,186 @@ async def _pass2_html(html: str) -> dict:
     return result
 
 
+RE_SOURCEMAP_COMMENT = re.compile(r'//[#@]\s*sourceMappingURL=(\S+)')
+MAX_MAP_BYTES = 2 * 1024 * 1024   # 2MB per map file
+MAX_SOURCE_FILES = 50              # max files to store per map
+MAX_SOURCE_CONTENT_BYTES = 50_000  # truncate individual file content
+
+
+def _resolve_url(src: str, base_url: str) -> str:
+    """Resolve a potentially relative script URL against the page base."""
+    if src.startswith("//"):
+        return "https:" + src
+    if src.startswith("/"):
+        p = urlparse(base_url)
+        return f"{p.scheme}://{p.netloc}{src}"
+    if not src.startswith("http"):
+        return urljoin(base_url, src)
+    return src
+
+
+async def _fetch_and_parse_sourcemap(
+    map_url: str,
+    js_url: str,
+    client: httpx.AsyncClient,
+) -> dict | None:
+    """
+    Fetch a .map file and extract the source tree.
+    Returns structured dict or None on failure.
+    """
+    try:
+        resp = await client.get(map_url, timeout=8.0, follow_redirects=True)
+        if resp.status_code != 200:
+            return None
+
+        raw = resp.text
+        if len(raw) > MAX_MAP_BYTES:
+            logger.debug(f"Source map too large ({len(raw)} bytes), truncating: {map_url}")
+            # Still parse — just won't have sourcesContent for large files
+            raw = raw[:MAX_MAP_BYTES]
+
+        try:
+            data = __import__('json').loads(raw)
+        except Exception:
+            logger.debug(f"Source map JSON parse failed: {map_url}")
+            return None
+
+        version = data.get("version")
+        if version not in (3, "3"):
+            return None  # Only support source map v3
+
+        sources_raw = data.get("sources", [])
+        sources_content = data.get("sourcesContent", [])
+
+        # Build file tree entries
+        files = []
+        for i, path in enumerate(sources_raw[:MAX_SOURCE_FILES]):
+            if not path or not isinstance(path, str):
+                continue
+
+            # Normalise webpack/vite internal prefixes
+            display_path = path
+            for prefix in ("webpack://", "webpack:///", "vite:///", "./"):
+                if display_path.startswith(prefix):
+                    display_path = display_path[len(prefix):]
+                    break
+
+            content = None
+            if i < len(sources_content) and isinstance(sources_content[i], str):
+                raw_content = sources_content[i]
+                if len(raw_content) > MAX_SOURCE_CONTENT_BYTES:
+                    content = raw_content[:MAX_SOURCE_CONTENT_BYTES] + "\n// [truncated]"
+                else:
+                    content = raw_content
+
+            # Infer language from extension
+            ext = display_path.rsplit(".", 1)[-1].lower() if "." in display_path else ""
+            lang = {
+                "ts": "typescript", "tsx": "typescript",
+                "js": "javascript",  "jsx": "javascript",
+                "vue": "vue",        "svelte": "svelte",
+                "css": "css",        "scss": "css",
+                "json": "json",      "py": "python",
+            }.get(ext, "text")
+
+            files.append({
+                "path": display_path,
+                "original_path": path,
+                "lang": lang,
+                "has_content": content is not None,
+                "content": content,
+                "size": len(content) if content else 0,
+            })
+
+        # Exposure level
+        has_content = any(f["has_content"] for f in files)
+        exposure = "full_source" if has_content else "paths_only"
+
+        return {
+            "map_url": map_url,
+            "js_url": js_url,
+            "version": version,
+            "exposure": exposure,          # 'full_source' | 'paths_only'
+            "file_count": len(files),
+            "files": files,
+            "sources_root": data.get("sourceRoot", ""),
+        }
+
+    except Exception as e:
+        logger.debug(f"Source map fetch failed {map_url}: {e}")
+        return None
+
+
 async def _pass3_js(script_urls: list, base_url: str, client: httpx.AsyncClient) -> dict:
-    """JS bundle analysis."""
+    """JS bundle analysis + source map recovery."""
     result = {
         "endpoints": [], "source_map_leaks": [], "env_vars": [],
-        "secret_patterns": [], "external_domains": [], "graphql": False, "websockets": []
+        "secret_patterns": [], "external_domains": [],
+        "graphql": False, "websockets": [],
+        "source_maps": [],   # NEW: parsed source map data
     }
 
-    # Resolve relative URLs, cap at 5
-    resolved_urls = []
-    for src in script_urls[:5]:
-        if src.startswith("//"):
-            src = "https:" + src
-        elif src.startswith("/"):
-            parsed = urlparse(base_url)
-            src = f"{parsed.scheme}://{parsed.netloc}{src}"
-        elif not src.startswith("http"):
-            src = urljoin(base_url, src)
-        resolved_urls.append(src)
+    resolved_urls = [_resolve_url(s, base_url) for s in script_urls[:5]]
 
     async def analyze_one(js_url: str):
         try:
             resp = await client.get(js_url, timeout=8.0, follow_redirects=True)
             content = resp.text
-
-            # Check for source map
-            map_url = js_url + ".map"
-            try:
-                map_resp = await client.head(map_url, timeout=5.0)
-                if map_resp.status_code == 200:
-                    result["source_map_leaks"].append(map_url)
-            except Exception:
-                pass
-
-            # Extract findings (cap content length to prevent ReDoS on massive bundles)
             content_sample = content[:500_000]
 
+            # --- Source map discovery (two methods) ---
+            # Method 1: SourceMap response header
+            map_url = resp.headers.get("SourceMap") or resp.headers.get("X-SourceMap")
+            # Method 2: //# sourceMappingURL= comment in JS body
+            if not map_url:
+                m = RE_SOURCEMAP_COMMENT.search(content_sample)
+                if m:
+                    map_url = m.group(1).strip()
+            # Method 3: Fallback — try .map appended to URL
+            if not map_url:
+                map_url = js_url + ".map"
+                try:
+                    head = await client.head(map_url, timeout=4.0)
+                    if head.status_code != 200:
+                        map_url = None
+                except Exception:
+                    map_url = None
+
+            # Resolve relative map URLs against the JS file URL
+            if map_url and not map_url.startswith("http") and not map_url.startswith("data:"):
+                map_url = _resolve_url(map_url, js_url)
+
+            # Fetch and parse the map if found
+            if map_url and not map_url.startswith("data:"):
+                parsed_map = await _fetch_and_parse_sourcemap(map_url, js_url, client)
+                if parsed_map:
+                    result["source_maps"].append(parsed_map)
+                    result["source_map_leaks"].append(map_url)
+
+            # --- Existing regex analysis ---
             endpoints = RE_API_V1.findall(content_sample) + RE_API_V2.findall(content_sample)
             result["endpoints"].extend(endpoints)
-
             result["env_vars"].extend(RE_ENV_VARS.findall(content_sample))
 
             for match in RE_SECRETS.finditer(content_sample):
                 result["secret_patterns"].append({
                     "pattern": match.group(0)[:80],
-                    "source": js_url
+                    "source": js_url,
                 })
 
-            domains = RE_EXTERNAL_DOMAINS.findall(content_sample)
-            result["external_domains"].extend(domains)
+            result["external_domains"].extend(RE_EXTERNAL_DOMAINS.findall(content_sample))
 
             if RE_GRAPHQL.search(content_sample):
                 result["graphql"] = True
 
-            ws_matches = RE_WEBSOCKET.findall(content_sample)
-            result["websockets"].extend(ws_matches)
+            result["websockets"].extend(RE_WEBSOCKET.findall(content_sample))
 
         except Exception as e:
             logger.debug(f"JS analysis failed for {js_url}: {e}")
 
     await asyncio.gather(*[analyze_one(u) for u in resolved_urls])
 
-    # Deduplicate
+    # Deduplicate flat lists
     result["endpoints"] = list(dict.fromkeys(result["endpoints"]))[:50]
     result["env_vars"] = list(dict.fromkeys(result["env_vars"]))
     result["external_domains"] = list(dict.fromkeys(result["external_domains"]))[:30]
@@ -332,8 +450,28 @@ def _build_risk_flags(headers: dict, js: dict, html_surface: dict) -> list:
     raw_headers = headers.get("raw_headers", {})
 
     if js.get("source_map_leaks"):
-        for leak in js["source_map_leaks"]:
-            flags.append({"severity": "HIGH", "type": "source_map_leak", "detail": f"Source map exposed: {leak}"})
+        for sm in js.get("source_maps", []):
+            if sm["exposure"] == "full_source":
+                flags.append({
+                    "severity": "HIGH",
+                    "type": "source_map_full_source",
+                    "detail": f"Full source code exposed via source map ({sm['file_count']} files): {sm['map_url']}"
+                })
+            else:
+                flags.append({
+                    "severity": "MEDIUM",
+                    "type": "source_map_paths_only",
+                    "detail": f"Internal file paths exposed via source map ({sm['file_count']} files): {sm['map_url']}"
+                })
+        # Flag any leaks we detected but couldn't parse
+        parsed_urls = {sm["map_url"] for sm in js.get("source_maps", [])}
+        for leak_url in js.get("source_map_leaks", []):
+            if leak_url not in parsed_urls:
+                flags.append({
+                    "severity": "HIGH",
+                    "type": "source_map_leak",
+                    "detail": f"Source map exposed (parse failed): {leak_url}"
+                })
 
     if js.get("secret_patterns"):
         for s in js["secret_patterns"]:

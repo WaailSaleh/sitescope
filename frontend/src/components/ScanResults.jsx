@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import SourceMapViewer from './SourceMapViewer'
 
-const TABS = ['OVERVIEW', 'JS ANALYSIS', 'HEADERS', 'DNS INTEL', 'RISK FLAGS']
+const TABS = ['OVERVIEW', 'JS ANALYSIS', 'SOURCE MAPS', 'HEADERS', 'DNS INTEL', 'RISK FLAGS']
 
 function Badge({ severity }) {
   const cls = {
@@ -378,6 +379,8 @@ export default function ScanResults({ result }) {
   const [activeTab, setActiveTab] = useState(0)
   const flagCount = result.risk_flags?.length || 0
   const highCount = result.risk_flags?.filter(f => f.severity === 'HIGH').length || 0
+  const sourceMaps = result.js_analysis?.source_maps || []
+  const fullSourceCount = sourceMaps.filter(sm => sm.exposure === 'full_source').length
 
   return (
     <div
@@ -410,6 +413,18 @@ export default function ScanResults({ result }) {
                 {flagCount}
               </span>
             )}
+            {tab === 'SOURCE MAPS' && sourceMaps.length > 0 && (
+              <span
+                className="ml-1.5 px-1.5 py-0.5 rounded"
+                style={{
+                  background: fullSourceCount > 0 ? 'rgba(255,68,85,0.2)' : 'rgba(255,184,0,0.2)',
+                  color: fullSourceCount > 0 ? 'var(--red)' : 'var(--amber)',
+                  fontSize: 10,
+                }}
+              >
+                {sourceMaps.length}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -418,9 +433,10 @@ export default function ScanResults({ result }) {
       <div className="p-4" style={{ background: 'var(--surface)' }}>
         {activeTab === 0 && <OverviewTab result={result} />}
         {activeTab === 1 && <JsTab result={result} />}
-        {activeTab === 2 && <HeadersTab result={result} />}
-        {activeTab === 3 && <DnsTab result={result} />}
-        {activeTab === 4 && <RiskFlagsTab result={result} />}
+        {activeTab === 2 && <SourceMapViewer sourceMaps={sourceMaps} />}
+        {activeTab === 3 && <HeadersTab result={result} />}
+        {activeTab === 4 && <DnsTab result={result} />}
+        {activeTab === 5 && <RiskFlagsTab result={result} />}
       </div>
     </div>
   )
