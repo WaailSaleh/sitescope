@@ -296,41 +296,61 @@ async def _pass3_js(script_urls: list, base_url: str, client: httpx.AsyncClient)
     }
 
     resolved_urls = [_resolve_url(s, base_url) for s in script_urls[:5]]
+    logger.info(f"Pass 3: analyzing {len(resolved_urls)} scripts from {base_url}")
 
     async def analyze_one(js_url: str):
         try:
             resp = await client.get(js_url, timeout=8.0, follow_redirects=True)
             content = resp.text
+            content_len = len(content)
+
+            # sourceMappingURL is ALWAYS at the end of the file — search the tail first
+            # then fall back to scanning the full sample for edge cases
+            tail = content[-2000:] if content_len > 2000 else content
             content_sample = content[:500_000]
 
-            # --- Source map discovery (two methods) ---
-            # Method 1: SourceMap response header
+            # --- Source map discovery ---
+            # Method 1: SourceMap / X-SourceMap response header (highest priority)
             map_url = resp.headers.get("SourceMap") or resp.headers.get("X-SourceMap")
-            # Method 2: //# sourceMappingURL= comment in JS body
+            if map_url:
+                logger.info(f"  Source map found via header: {map_url} (js: {js_url})")
+
+            # Method 2: //# sourceMappingURL= comment — search TAIL first, then full sample
             if not map_url:
-                m = RE_SOURCEMAP_COMMENT.search(content_sample)
+                m = RE_SOURCEMAP_COMMENT.search(tail) or RE_SOURCEMAP_COMMENT.search(content_sample)
                 if m:
                     map_url = m.group(1).strip()
-            # Method 3: Fallback — try .map appended to URL
-            if not map_url:
-                map_url = js_url + ".map"
-                try:
-                    head = await client.head(map_url, timeout=4.0)
-                    if head.status_code != 200:
-                        map_url = None
-                except Exception:
-                    map_url = None
+                    logger.info(f"  Source map found via comment: {map_url} (js: {js_url})")
 
-            # Resolve relative map URLs against the JS file URL
+            # Method 3: Blind probe — append .map to JS URL
+            if not map_url:
+                probe_url = js_url + ".map"
+                try:
+                    head = await client.head(probe_url, timeout=4.0)
+                    if head.status_code == 200:
+                        map_url = probe_url
+                        logger.info(f"  Source map found via probe: {map_url}")
+                    else:
+                        logger.debug(f"  No map at {probe_url} (HTTP {head.status_code})")
+                except Exception as e:
+                    logger.debug(f"  Map probe failed for {probe_url}: {e}")
+
+            # Resolve relative map URLs against the JS file's URL
             if map_url and not map_url.startswith("http") and not map_url.startswith("data:"):
                 map_url = _resolve_url(map_url, js_url)
+                logger.info(f"  Resolved relative map URL to: {map_url}")
 
-            # Fetch and parse the map if found
+            # Fetch and parse
             if map_url and not map_url.startswith("data:"):
                 parsed_map = await _fetch_and_parse_sourcemap(map_url, js_url, client)
                 if parsed_map:
+                    logger.info(f"  Parsed source map: {parsed_map['file_count']} files, exposure={parsed_map['exposure']}")
                     result["source_maps"].append(parsed_map)
                     result["source_map_leaks"].append(map_url)
+                else:
+                    logger.info(f"  Source map fetch/parse failed: {map_url}")
+            else:
+                logger.info(f"  No source map found for {js_url}")
 
             # --- Existing regex analysis ---
             endpoints = RE_API_V1.findall(content_sample) + RE_API_V2.findall(content_sample)

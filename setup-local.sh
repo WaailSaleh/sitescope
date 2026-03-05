@@ -158,11 +158,12 @@ log "Starting FastAPI backend..."
     RATE_LIMIT_MAX="50" \
     RATE_LIMIT_WINDOW="60" \
     IP_RATE_LIMIT_MAX="100" \
+    SSRF_DEV_ALLOWLIST="localhost,127.0.0.1" \
         "$VENV_DIR/bin/uvicorn" app.main:app \
         --host 127.0.0.1 \
         --port 8000 \
         --workers 1 \
-        --log-level warning \
+        --log-level info \
         >> "$DATA_DIR/backend.log" 2>&1
 ) &
 BACKEND_PID=$!
@@ -228,14 +229,14 @@ run_test "T01 /health returns ok"                   "curl -sf http://127.0.0.1:8
 run_test "T02 /session/stats with valid SID"        "curl -sf http://127.0.0.1:8000/api/v1/session/stats -H '$H'" 'scan_count'
 run_test "T03 /session/stats no SID → 422"          "curl -s -o/dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/session/stats" "422"
 run_test "T04 SSRF: 192.168.x.x blocked"            "curl -s -XPOST http://127.0.0.1:8000/api/v1/analyze/start -H '$B' -H '$H' -d '{\"url\":\"http://192.168.1.1\"}'" "rejected"
-run_test "T05 SSRF: 127.0.0.1 blocked"              "curl -s -XPOST http://127.0.0.1:8000/api/v1/analyze/start -H '$B' -H '$H' -d '{\"url\":\"http://127.0.0.1:9999\"}'" "rejected"
+run_test "T05 SSRF: 127.0.0.1 allowed (dev allowlist active)" "curl -s -XPOST http://127.0.0.1:8000/api/v1/analyze/start -H '$B' -H '$H' -d '{\"url\":\"http://127.0.0.1:9999\"}'" "scan_id"
 run_test "T06 SSRF: 10.0.0.1 blocked"               "curl -s -XPOST http://127.0.0.1:8000/api/v1/analyze/start -H '$B' -H '$H' -d '{\"url\":\"http://10.0.0.1\"}'" "rejected"
 run_test "T07 Bad scheme ftp:// → 4xx"              "curl -s -o/dev/null -w '%{http_code}' -XPOST http://127.0.0.1:8000/api/v1/analyze/start -H '$B' -H '$H' -d '{\"url\":\"ftp://example.com\"}'" "4"
 run_test "T08 No SID on analyze → 400"              "curl -s -o/dev/null -w '%{http_code}' -XPOST http://127.0.0.1:8000/api/v1/analyze/start -H '$B' -d '{\"url\":\"https://example.com\"}'" "4"
 run_test "T09 Non-UUID scan_id → 400"               "curl -s -o/dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/analyze/not-a-uuid -H '$H'" "400"
 run_test "T10 /analyze/history returns scans array" "curl -sf http://127.0.0.1:8000/api/v1/analyze/history -H '$H'" '"scans"'
-run_test "T11 Security header: x-content-type-options" "curl -sI http://127.0.0.1:8000/health" "x-content-type-options"
-run_test "T12 Security header: x-frame-options"     "curl -sI http://127.0.0.1:8000/health" "x-frame-options"
+run_test "T11 Security header: x-content-type-options" "curl -s http://127.0.0.1:8000/health -D -" "x-content-type-options"
+run_test "T12 Security header: x-frame-options"     "curl -s http://127.0.0.1:8000/health -D -" "x-frame-options"
 LONG_URL="https://example.com/$(python -c "print('a'*2100)")"
 run_test "T13 URL > 2048 chars → 422"               "curl -s -o/dev/null -w '%{http_code}' -XPOST http://127.0.0.1:8000/api/v1/analyze/start -H '$B' -H '$H' -d '{\"url\":\"$LONG_URL\"}'" "422"
 

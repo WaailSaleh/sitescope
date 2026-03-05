@@ -40,6 +40,14 @@ BLOCKED_HOSTS = {
     "169.254.170.2",    # ECS metadata
 }
 
+# Dev-only: comma-separated hostnames/IPs to bypass SSRF checks
+# e.g. SSRF_DEV_ALLOWLIST=localhost,127.0.0.1
+# NEVER set this in production
+_raw_allowlist = __import__('os').getenv("SSRF_DEV_ALLOWLIST", "")
+SSRF_DEV_ALLOWLIST: set[str] = {
+    h.strip() for h in _raw_allowlist.split(",") if h.strip()
+} if _raw_allowlist else set()
+
 
 def is_private_ip(addr: str) -> bool:
     try:
@@ -71,6 +79,11 @@ async def resolve_and_validate(url: str) -> tuple[bool, str]:
     hostname = parsed.hostname
     if not hostname:
         return False, "No hostname in URL"
+
+    # Dev allowlist bypass — only active when SSRF_DEV_ALLOWLIST env var is set
+    if SSRF_DEV_ALLOWLIST and hostname in SSRF_DEV_ALLOWLIST:
+        logger.warning(f"SSRF dev allowlist bypass for hostname: {hostname} — DO NOT USE IN PRODUCTION")
+        return True, "OK (dev allowlist)"
 
     if hostname in BLOCKED_HOSTS:
         return False, "Hostname is blocked"
