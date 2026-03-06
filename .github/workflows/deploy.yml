@@ -58,7 +58,7 @@ jobs:
       - name: Verify imports
         run: |
           python -c "
-          for m in ['fastapi','uvicorn','httpx','aiosqlite','bs4','pydantic','dns.resolver','lxml']:
+          for m in ['fastapi','uvicorn','httpx','asyncpg','bs4','pydantic','dns.resolver','lxml']:
               __import__(m)
           print('All imports OK')
           "
