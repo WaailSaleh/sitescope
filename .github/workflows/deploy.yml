@@ -96,7 +96,7 @@ jobs:
             ${{ env.BACKEND_IMAGE }}:latest
             ${{ env.BACKEND_IMAGE }}:${{ steps.tag.outputs.sha-tag }}
           cache-from: type=gha,scope=backend
-          cache-to: type=gha,scope=backend,mode=max
+          cache-to: type=gha,scope=backend,mode=max,ignore-error=true
 
       - name: Build & push frontend
         uses: docker/build-push-action@v5
@@ -108,7 +108,7 @@ jobs:
             ${{ env.FRONTEND_IMAGE }}:latest
             ${{ env.FRONTEND_IMAGE }}:${{ steps.tag.outputs.sha-tag }}
           cache-from: type=gha,scope=frontend
-          cache-to: type=gha,scope=frontend,mode=max
+          cache-to: type=gha,scope=frontend,mode=max,ignore-error=true
 
   # ============================================================
   # Job 3: Deploy
