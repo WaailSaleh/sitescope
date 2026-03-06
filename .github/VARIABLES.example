@@ -1,50 +1,19 @@
 # =============================================================================
 # SiteScope — GitHub Variables & Secrets
 # =============================================================================
-# Copy this file, fill in your values, then add each one to GitHub:
+# Add each value to your GitHub repo:
 #   Settings → Secrets and variables → Actions
-#
-# VARIABLES tab (not secret — appear in logs, safe to share):
-# SECRETS tab  (encrypted — never appear in logs)
 # =============================================================================
 
 # ---- VARIABLES (Settings → Variables → Actions) ---------------------------
 
-# Your root domain (Cloudflare must manage DNS for this)
-DOMAIN=jidka.org
-
-# Full subdomain for this app
+# Full subdomain for this app (must match Cloudflare Tunnel public hostname)
 SUBDOMAIN=sitescope.jidka.org
-
-# Email for Let's Encrypt expiry notices (any email you own)
-ACME_EMAIL=you@example.com
-
-# Cloudflare Zone ID — Cloudflare dashboard → your domain → right sidebar
-CF_ZONE_ID=abc123def456...
-
-# Cloudflare A record ID for the root domain
-# Get it by running:
-#   curl -X GET "https://api.cloudflare.com/client/v4/zones/YOUR_ZONE_ID/dns_records?type=A&name=jidka.org" \
-#     -H "Authorization: Bearer YOUR_CF_API_TOKEN" | jq '.result[0].id'
-CF_RECORD_ID=xyz789...
-
-# The DNS record name the DDNS updater keeps current (usually same as DOMAIN)
-CF_RECORD_NAME=jidka.org
 
 
 # ---- SECRETS (Settings → Secrets → Actions) --------------------------------
-
-# Cloudflare API Token
-# Create at: dash.cloudflare.com/profile/api-tokens
-# Template: Edit zone DNS → Zone: jidka.org
-CF_API_TOKEN=your-cloudflare-api-token
 
 # GitHub PAT for pushing/pulling from ghcr.io
 # Create at: github.com/settings/tokens → Generate new token (classic)
 # Required scopes: write:packages, read:packages
 GHCR_TOKEN=ghp_your-github-pat
-
-# Base64-encoded kubeconfig for your k3s cluster
-# See k8s/KUBECONFIG_SETUP.sh for how to generate a scoped one safely
-# Quick version: cat ~/.kube/config | base64 -w 0
-KUBE_CONFIG=base64encodedkubeconfig...
