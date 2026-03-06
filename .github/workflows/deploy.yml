@@ -142,7 +142,7 @@ jobs:
         run: |
           mkdir -p ~/.kube
           sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-          sudo chown $(id -u):$(id -g) ~/.kube/config
+          sudo chown admin:admin ~/.kube/config
           chmod 600 ~/.kube/config
 
       - name: Verify cluster connection
