@@ -9,3 +9,5 @@ python-dotenv==1.0.1
 starlette==0.37.2
 anyio==4.3.0
 dnspython==2.6.1
+pytest==8.2.0
+pytest-asyncio==0.23.7
