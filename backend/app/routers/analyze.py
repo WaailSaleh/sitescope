@@ -21,26 +21,24 @@ async def _run_scan(scan_id: str, url: str, sid: str):
         result = await analyze_target(url)
         completed_at = int(time.time())
 
-        async with get_db() as db:
-            await db.execute(
-                """UPDATE scans SET status='complete', result_json=?, completed_at=?
-                   WHERE id=?""",
-                (json.dumps(result), completed_at, scan_id)
-            )
-            await db.execute(
-                "UPDATE sessions SET scan_count = scan_count + 1, last_seen = ? WHERE sid = ?",
-                (completed_at, sid)
-            )
-            await db.commit()
+        async with get_db() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "UPDATE scans SET status='complete', result_json=$1, completed_at=$2 WHERE id=$3",
+                    json.dumps(result), completed_at, scan_id
+                )
+                await conn.execute(
+                    "UPDATE sessions SET scan_count = scan_count + 1, last_seen = $1 WHERE sid = $2",
+                    completed_at, sid
+                )
 
     except Exception as e:
         logger.error(f"Scan {scan_id} failed: {e}")
-        async with get_db() as db:
-            await db.execute(
-                "UPDATE scans SET status='error', completed_at=? WHERE id=?",
-                (int(time.time()), scan_id)
+        async with get_db() as conn:
+            await conn.execute(
+                "UPDATE scans SET status='error', completed_at=$1 WHERE id=$2",
+                int(time.time()), scan_id
             )
-            await db.commit()
 
 
 @router.post("/start", response_model=ScanResponse, status_code=202)
@@ -64,13 +62,11 @@ async def start_analysis(
     # Ensure session exists
     await upsert_session(x_shadow_id)
 
-    async with get_db() as db:
-        await db.execute(
-            """INSERT INTO scans (id, sid, target_url, target_domain, status, created_at)
-               VALUES (?, ?, ?, ?, 'pending', ?)""",
-            (scan_id, x_shadow_id, body.url, domain, created_at)
+    async with get_db() as conn:
+        await conn.execute(
+            "INSERT INTO scans (id, sid, target_url, target_domain, status, created_at) VALUES ($1, $2, $3, $4, 'pending', $5)",
+            scan_id, x_shadow_id, body.url, domain, created_at
         )
-        await db.commit()
 
     background_tasks.add_task(_run_scan, scan_id, body.url, x_shadow_id)
 
@@ -88,12 +84,12 @@ async def scan_history(
 
     offset = (page - 1) * limit
 
-    async with get_db() as db:
-        rows = await db.execute_fetchall(
+    async with get_db() as conn:
+        rows = await conn.fetch(
             """SELECT id, target_url, target_domain, status, created_at, completed_at
-               FROM scans WHERE sid = ?
-               ORDER BY created_at DESC LIMIT ? OFFSET ?""",
-            (x_shadow_id, limit, offset)
+               FROM scans WHERE sid = $1
+               ORDER BY created_at DESC LIMIT $2 OFFSET $3""",
+            x_shadow_id, limit, offset
         )
 
     return {
@@ -115,17 +111,14 @@ async def get_scan(
     if not UUID_RE.match(scan_id):
         raise HTTPException(status_code=400, detail="Invalid scan_id format")
 
-    async with get_db() as db:
-        rows = await db.execute_fetchall(
-            """SELECT id, sid, status, result_json, created_at, completed_at
-               FROM scans WHERE id = ?""",
-            (scan_id,)
+    async with get_db() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, sid, status, result_json, created_at, completed_at FROM scans WHERE id = $1",
+            scan_id
         )
 
-    if not rows:
+    if not row:
         raise HTTPException(status_code=404, detail="Scan not found")
-
-    row = rows[0]
 
     # Ownership check — only return to the requesting sid
     if row["sid"] != x_shadow_id:

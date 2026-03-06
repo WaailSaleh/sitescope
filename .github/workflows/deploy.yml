@@ -155,9 +155,10 @@ jobs:
           DOMAIN:          ${{ vars.DOMAIN }}
           SUBDOMAIN:       ${{ vars.SUBDOMAIN }}
           ACME_EMAIL:      ${{ vars.ACME_EMAIL }}
-          CF_ZONE_ID:      ${{ vars.CF_ZONE_ID }}
-          CF_RECORD_ID:    ${{ vars.CF_RECORD_ID }}
-          CF_RECORD_NAME:  ${{ vars.CF_RECORD_NAME }}
+          CF_ZONE_ID:              ${{ vars.CF_ZONE_ID }}
+          CF_RECORD_ID:            ${{ vars.CF_RECORD_ID }}
+          CF_WILDCARD_RECORD_ID:   ${{ vars.CF_WILDCARD_RECORD_ID }}
+          CF_RECORD_NAME:          ${{ vars.CF_RECORD_NAME }}
           GITHUB_OWNER:    waailsaleh
           IMAGE_TAG:       ${{ needs.build.outputs.sha-tag }}
           CF_API_TOKEN:    ${{ secrets.CF_API_TOKEN }}

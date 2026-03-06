@@ -190,50 +190,49 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         window_start = now - (now % RATE_LIMIT_WINDOW)
 
         try:
-            async with get_db() as db:
-                # --- SID-based rate limit ---
-                await db.execute("""
-                    INSERT INTO rate_limits (sid, window_start, request_count)
-                    VALUES (?, ?, 1)
-                    ON CONFLICT(sid, window_start) DO UPDATE SET request_count = request_count + 1
-                """, (shadow_id, window_start))
-                await db.commit()
+            async with get_db() as conn:
+                async with conn.transaction():
+                    # --- SID-based rate limit ---
+                    await conn.execute("""
+                        INSERT INTO rate_limits (sid, window_start, request_count)
+                        VALUES ($1, $2, 1)
+                        ON CONFLICT (sid, window_start) DO UPDATE SET request_count = rate_limits.request_count + 1
+                    """, shadow_id, window_start)
 
-                row = await db.execute_fetchall(
-                    "SELECT request_count FROM rate_limits WHERE sid = ? AND window_start = ?",
-                    (shadow_id, window_start)
-                )
-                sid_count = row[0]["request_count"] if row else 1
-
-                if sid_count > RATE_LIMIT_MAX:
-                    retry_after = RATE_LIMIT_WINDOW - (now % RATE_LIMIT_WINDOW)
-                    return JSONResponse(
-                        status_code=429,
-                        content={"detail": "Rate limit exceeded. Try again later."},
-                        headers={"Retry-After": str(retry_after)}
+                    row = await conn.fetchrow(
+                        "SELECT request_count FROM rate_limits WHERE sid = $1 AND window_start = $2",
+                        shadow_id, window_start
                     )
+                    sid_count = row["request_count"] if row else 1
 
-                # --- IP-based secondary rate limit ---
-                await db.execute("""
-                    INSERT INTO ip_rate_limits (ip, window_start, request_count)
-                    VALUES (?, ?, 1)
-                    ON CONFLICT(ip, window_start) DO UPDATE SET request_count = request_count + 1
-                """, (client_ip, window_start))
-                await db.commit()
+                    if sid_count > RATE_LIMIT_MAX:
+                        retry_after = RATE_LIMIT_WINDOW - (now % RATE_LIMIT_WINDOW)
+                        return JSONResponse(
+                            status_code=429,
+                            content={"detail": "Rate limit exceeded. Try again later."},
+                            headers={"Retry-After": str(retry_after)}
+                        )
 
-                ip_row = await db.execute_fetchall(
-                    "SELECT request_count FROM ip_rate_limits WHERE ip = ? AND window_start = ?",
-                    (client_ip, window_start)
-                )
-                ip_count = ip_row[0]["request_count"] if ip_row else 1
+                    # --- IP-based secondary rate limit ---
+                    await conn.execute("""
+                        INSERT INTO ip_rate_limits (ip, window_start, request_count)
+                        VALUES ($1, $2, 1)
+                        ON CONFLICT (ip, window_start) DO UPDATE SET request_count = ip_rate_limits.request_count + 1
+                    """, client_ip, window_start)
 
-                if ip_count > IP_RATE_LIMIT_MAX:
-                    retry_after = RATE_LIMIT_WINDOW - (now % RATE_LIMIT_WINDOW)
-                    return JSONResponse(
-                        status_code=429,
-                        content={"detail": "IP rate limit exceeded. Try again later."},
-                        headers={"Retry-After": str(retry_after)}
+                    ip_row = await conn.fetchrow(
+                        "SELECT request_count FROM ip_rate_limits WHERE ip = $1 AND window_start = $2",
+                        client_ip, window_start
                     )
+                    ip_count = ip_row["request_count"] if ip_row else 1
+
+                    if ip_count > IP_RATE_LIMIT_MAX:
+                        retry_after = RATE_LIMIT_WINDOW - (now % RATE_LIMIT_WINDOW)
+                        return JSONResponse(
+                            status_code=429,
+                            content={"detail": "IP rate limit exceeded. Try again later."},
+                            headers={"Retry-After": str(retry_after)}
+                        )
 
         except Exception as e:
             logger.error(f"Rate limit check failed: {e}")
