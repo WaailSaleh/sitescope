@@ -9,3 +9,16 @@ data:
   RATE_LIMIT_MAX: "10"
   RATE_LIMIT_WINDOW: "60"
   IP_RATE_LIMIT_MAX: "30"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tor-config
+  namespace: sitescope
+data:
+  torrc: |
+    SocksPort 0.0.0.0:9050
+    DNSPort 0.0.0.0:8853
+    DataDirectory /var/lib/tor
+    Log notice stdout
