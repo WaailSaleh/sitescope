@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.database import init_db
+from app.database import init_db, close_pool
 from app.middleware.security import SecurityHeadersMiddleware, RateLimitMiddleware
 from app.routers import analyze, session
 
@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("SiteScope backend ready.")
     yield
+    await close_pool()
     logger.info("Shutting down.")
 
 
