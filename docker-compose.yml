@@ -8,7 +8,8 @@ services:
     container_name: sitescope-backend
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      # Bind to localhost only — never expose the backend directly to the internet
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./data:/app/data
     environment:
@@ -34,12 +35,27 @@ services:
     container_name: sitescope-frontend
     restart: unless-stopped
     ports:
-      - "80:8080"
+      # Bind to localhost only — cloudflared connects here, not the open internet
+      - "127.0.0.1:80:8080"
     depends_on:
       backend:
         condition: service_healthy
     security_opt:
       - no-new-privileges:true
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: sitescope-cloudflared
+    restart: unless-stopped
+    # Token-based tunnel: create at dash.cloudflare.com → Zero Trust → Networks → Tunnels
+    # Set TUNNEL_TOKEN in your .env file
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    depends_on:
+      frontend:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    network_mode: host  # needs host network to reach localhost:80
 
   # Local dev override: run frontend with Vite hot reload
   # Use `docker-compose --profile dev up` to start

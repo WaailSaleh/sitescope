@@ -132,7 +132,21 @@ async def resolve_and_validate(url: str) -> tuple[bool, str]:
 
 
 def get_client_ip(request: Request) -> str:
-    """Extract real client IP, trusting only the first X-Forwarded-For entry."""
+    """Extract real client IP.
+
+    Priority:
+    1. CF-Connecting-IP — set by Cloudflare Tunnel; contains the verified real client IP.
+    2. X-Forwarded-For first hop — fallback for non-Cloudflare proxies.
+    3. request.client.host — last resort (will be cloudflared daemon IP when tunnelled).
+    """
+    cf_ip = request.headers.get("CF-Connecting-IP", "").strip()
+    if cf_ip:
+        try:
+            ipaddress.ip_address(cf_ip)
+            return cf_ip
+        except ValueError:
+            pass
+
     forwarded_for = request.headers.get("X-Forwarded-For")
     if forwarded_for:
         # Take only the first IP to prevent header injection
@@ -142,6 +156,7 @@ def get_client_ip(request: Request) -> str:
             return first_ip
         except ValueError:
             pass
+
     return request.client.host if request.client else "unknown"
 
 
