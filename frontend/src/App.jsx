@@ -6,6 +6,7 @@ import ScanInput from './components/ScanInput'
 import ScanResults from './components/ScanResults'
 import ScanLoader from './components/ScanLoader'
 import ScanHistory from './components/ScanHistory'
+import sitescopeIcon from './assets/sitescope-icon.svg'
 import './index.css'
 
 export const ShadowContext = createContext(null)
@@ -111,11 +112,13 @@ export default function App() {
           transition={{ duration: 0.4, ease: 'easeOut' }}
         >
           <div className="flex items-center gap-3">
-            <motion.div
-              className="w-2 h-2 rounded-full"
-              style={{ background: 'var(--green)', boxShadow: '0 0 6px var(--green)' }}
-              animate={{ opacity: [1, 0.3, 1] }}
-              transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+            <motion.img
+              src={sitescopeIcon}
+              alt="SiteScope Logo"
+              className="w-8 h-8"
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 0.5, ease: 'easeOut' }}
             />
             <span className="text-sm font-bold tracking-wider" style={{ color: 'var(--green)' }}>
               SITE<span style={{ color: 'var(--text)' }}>SCOPE</span>
