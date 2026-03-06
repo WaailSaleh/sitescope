@@ -85,8 +85,7 @@ spec:
               drop: ["ALL"]
 
         # Tor sidecar — SOCKS5 proxy on localhost:9050
-        # peterdavehello/tor-socks-proxy: ~10MB, no relay/exit node function
-        # All outbound scan traffic from the backend routes through this
+        # peterdavehello/tor-socks-proxy image defaults to 9150; torrc ConfigMap overrides to 9050
         - name: tor
           image: peterdavehello/tor-socks-proxy:latest
           imagePullPolicy: IfNotPresent
@@ -103,25 +102,31 @@ spec:
           livenessProbe:
             tcpSocket:
               port: 9050
-            initialDelaySeconds: 30
+            initialDelaySeconds: 90
             periodSeconds: 30
           readinessProbe:
             tcpSocket:
               port: 9050
-            initialDelaySeconds: 20
+            initialDelaySeconds: 60
             periodSeconds: 10
           securityContext:
             allowPrivilegeEscalation: false
+            # Override pod-level runAsUser (1000) — tor image runs as uid 100 (tor user)
+            runAsUser: 100
+            runAsGroup: 101
+            runAsNonRoot: true
             capabilities:
               drop: ["ALL"]
               add: ["NET_BIND_SERVICE"]
           volumeMounts:
-            - name: tor-data
-              mountPath: /var/lib/tor
+            - name: tor-config
+              mountPath: /etc/tor/torrc
+              subPath: torrc
 
       volumes:
-        - name: tor-data
-          emptyDir: {}
+        - name: tor-config
+          configMap:
+            name: tor-config
 
 ---
 apiVersion: v1
