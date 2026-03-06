@@ -5,6 +5,5 @@ dist
 *.md
 Dockerfile
 docker-compose.yml
-nginx.conf
 .env
 .env.*
