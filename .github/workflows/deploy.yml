@@ -179,11 +179,14 @@ jobs:
       - name: Apply cluster-bootstrap (idempotent)
         run: kubectl apply -f /tmp/rendered/cluster-bootstrap/
 
-      - name: Apply DDNS updater
-        run: kubectl apply -f /tmp/rendered/ddns/
-
       - name: Apply SiteScope manifests
         run: kubectl apply -f /tmp/rendered/sitescope/
+
+      # cloudflared tunnel — no envsubst needed, applied directly from repo
+      # The tunnel token secret is created manually (one-time, not managed by CI):
+      #   kubectl create secret generic tunnel-token --from-literal=token=TOKEN -n cloudflared
+      - name: Apply cloudflared tunnel
+        run: kubectl apply -f k8s/cloudflared/00-namespace.yaml -f k8s/cloudflared/02-deployment.yaml
 
       - name: Update image tags
         run: |
