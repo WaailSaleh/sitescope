@@ -33,8 +33,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  BACKEND_IMAGE:  ghcr.io/${{ github.repository_owner }}/sitescope-backend
-  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/sitescope-frontend
+  BACKEND_IMAGE:  ghcr.io/waailsaleh/sitescope-backend
+  FRONTEND_IMAGE: ghcr.io/waailsaleh/sitescope-frontend
 
 jobs:
   # ============================================================
@@ -158,7 +158,7 @@ jobs:
           CF_ZONE_ID:      ${{ vars.CF_ZONE_ID }}
           CF_RECORD_ID:    ${{ vars.CF_RECORD_ID }}
           CF_RECORD_NAME:  ${{ vars.CF_RECORD_NAME }}
-          GITHUB_OWNER:    ${{ github.repository_owner }}
+          GITHUB_OWNER:    waailsaleh
           IMAGE_TAG:       ${{ needs.build.outputs.sha-tag }}
           CF_API_TOKEN:    ${{ secrets.CF_API_TOKEN }}
         run: |
