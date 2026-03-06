@@ -144,7 +144,7 @@ All database queries use parameterized statements (aiosqlite). No f-strings, no 
 | 2 | SQL injection | ✅ Fixed | 100% parameterized queries; no string concat in SQL |
 | 3 | Path traversal | ✅ N/A | No file read/write on user input |
 | 4 | ReDoS | ✅ Fixed | Regex patterns simplified; JS content capped at 500KB |
-| 5 | Secret leakage | ✅ Fixed | No hardcoded credentials; env vars used; errors return generic messages |
+| 5 | variable leakage | ✅ Fixed | No hardcoded credentials; env vars used; errors return generic messages |
 | 6 | Error messages | ✅ Fixed | Global exception handler returns generic `{"detail": "An internal error occurred."}` |
 | 7 | Rate limit bypass | ✅ Fixed | Secondary IP-based rate limit; X-Forwarded-For first-hop only |
 | 8 | Missing sec headers | ✅ Fixed | All 6 headers on every response via SecurityHeadersMiddleware |
