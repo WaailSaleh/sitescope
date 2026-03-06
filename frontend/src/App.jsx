@@ -6,6 +6,7 @@ import ScanInput from './components/ScanInput'
 import ScanResults from './components/ScanResults'
 import ScanLoader from './components/ScanLoader'
 import ScanHistory from './components/ScanHistory'
+import Why from './components/Why'
 import sitescopeIcon from './assets/sitescope-icon.svg'
 import './index.css'
 
@@ -22,7 +23,17 @@ export default function App() {
   const [scanResult, setScanResult] = useState(null)
   const [sessionStats, setSessionStats] = useState(null)
   const [statsLoading, setStatsLoading] = useState(true)
-  const [view, setView] = useState('main') // 'main' | 'history'
+  const [view, setView] = useState('main') // 'main' | 'history' | 'why'
+
+  useEffect(() => {
+    const handleHash = () => {
+      if (window.location.hash === '#why') setView('why')
+      else if (view === 'why') setView('main')
+    }
+    window.addEventListener('hashchange', handleHash)
+    handleHash()
+    return () => window.removeEventListener('hashchange', handleHash)
+  }, [view])
 
   useEffect(() => {
     if (shadowId) setApi(createApiService(shadowId))
@@ -166,7 +177,9 @@ export default function App() {
         <main className="flex-1 flex flex-col items-center px-3 sm:px-6 lg:px-10 2xl:px-16 py-8 sm:py-12 gap-6 sm:gap-8">
           <div className="w-full max-w-3xl xl:max-w-5xl 2xl:max-w-6xl mx-auto flex flex-col gap-6 sm:gap-8">
             <AnimatePresence mode="wait">
-              {view === 'history' ? (
+              {view === 'why' ? (
+                <Why key="why" />
+              ) : view === 'history' ? (
                 <motion.div
                   key="history"
                   className="w-full flex flex-col items-center"
