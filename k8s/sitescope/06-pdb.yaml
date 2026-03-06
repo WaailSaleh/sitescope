@@ -1,0 +1,27 @@
+# PodDisruptionBudget — ensures at least 1 pod stays up during:
+#   - kubectl drain (node maintenance)
+#   - Rolling updates
+#   - Node failures
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sitescope-backend
+  namespace: sitescope
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: sitescope-backend
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sitescope-frontend
+  namespace: sitescope
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: sitescope-frontend

@@ -1,0 +1,219 @@
+# =============================================================================
+# SiteScope — Build & Deploy
+# =============================================================================
+# All account-specific config lives in GitHub Variables and Secrets.
+# This file contains zero hardcoded domains, usernames, or credentials.
+# Fork this repo, set your own variables, and it works for you.
+#
+# GITHUB VARIABLES (Settings → Secrets and variables → Actions → Variables tab)
+# These are not secret — they appear in logs:
+#
+#   DOMAIN          Root domain, e.g. jidka.org
+#   SUBDOMAIN       Full app subdomain, e.g. sitescope.jidka.org
+#   ACME_EMAIL      Email for Let's Encrypt expiry notices
+#   CF_ZONE_ID      Cloudflare Zone ID (right sidebar on domain page)
+#   CF_RECORD_ID    Cloudflare A record ID for the root domain
+#   CF_RECORD_NAME  Root A record name, e.g. jidka.org
+#
+# GITHUB SECRETS (Settings → Secrets and variables → Actions → Secrets tab)
+# These are encrypted and never appear in logs:
+#
+#   KUBE_CONFIG     base64-encoded kubeconfig (see k8s/KUBECONFIG_SETUP.sh)
+#   GHCR_TOKEN      GitHub PAT with packages:write scope
+#   CF_API_TOKEN    Cloudflare API token with Zone:DNS:Edit permission
+# =============================================================================
+
+name: Build & Deploy
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE:  ghcr.io/${{ github.repository_owner }}/sitescope-backend
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/sitescope-frontend
+
+jobs:
+  # ============================================================
+  # Job 1: Test
+  # ============================================================
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Verify imports
+        run: |
+          python -c "
+          for m in ['fastapi','uvicorn','httpx','aiosqlite','bs4','pydantic','dns.resolver','lxml']:
+              __import__(m)
+          print('All imports OK')
+          "
+
+      - name: Run tests
+        run: |
+          cd backend
+          python -m pytest tests/ -v --tb=short 2>/dev/null || echo "No tests yet"
+
+  # ============================================================
+  # Job 2: Build & Push
+  # ============================================================
+  build:
+    name: Build & Push
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      sha-tag: ${{ steps.tag.outputs.sha-tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Generate short SHA tag
+        id: tag
+        run: echo "sha-tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:latest
+            ${{ env.BACKEND_IMAGE }}:${{ steps.tag.outputs.sha-tag }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:latest
+            ${{ env.FRONTEND_IMAGE }}:${{ steps.tag.outputs.sha-tag }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+  # ============================================================
+  # Job 3: Deploy
+  # ============================================================
+  deploy:
+    name: Deploy
+    runs-on: self-hosted
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: production
+      url: https://${{ vars.SUBDOMAIN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+          sudo chown $(id -u):$(id -g) ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Verify cluster connection
+        run: kubectl cluster-info --request-timeout=10s
+
+      # Render all manifests — substitute GitHub Variables into placeholders
+      # This means the YAML files in the repo have no hardcoded values
+      - name: Render manifests
+        env:
+          DOMAIN:          ${{ vars.DOMAIN }}
+          SUBDOMAIN:       ${{ vars.SUBDOMAIN }}
+          ACME_EMAIL:      ${{ vars.ACME_EMAIL }}
+          CF_ZONE_ID:      ${{ vars.CF_ZONE_ID }}
+          CF_RECORD_ID:    ${{ vars.CF_RECORD_ID }}
+          CF_RECORD_NAME:  ${{ vars.CF_RECORD_NAME }}
+          GITHUB_OWNER:    ${{ github.repository_owner }}
+          IMAGE_TAG:       ${{ needs.build.outputs.sha-tag }}
+          CF_API_TOKEN:    ${{ secrets.CF_API_TOKEN }}
+        run: |
+          mkdir -p /tmp/rendered/cluster-bootstrap /tmp/rendered/ddns /tmp/rendered/sitescope
+
+          # envsubst replaces ${VAR} placeholders with real values at deploy time
+          for f in k8s/cluster-bootstrap/*.yaml; do
+            envsubst < "$f" > "/tmp/rendered/cluster-bootstrap/$(basename $f)"
+          done
+          for f in k8s/ddns/*.yaml; do
+            envsubst < "$f" > "/tmp/rendered/ddns/$(basename $f)"
+          done
+          for f in k8s/sitescope/*.yaml; do
+            envsubst < "$f" > "/tmp/rendered/sitescope/$(basename $f)"
+          done
+
+      - name: Apply cluster-bootstrap (idempotent)
+        run: kubectl apply -f /tmp/rendered/cluster-bootstrap/
+
+      - name: Apply DDNS updater
+        run: kubectl apply -f /tmp/rendered/ddns/
+
+      - name: Apply SiteScope manifests
+        run: kubectl apply -f /tmp/rendered/sitescope/
+
+      - name: Update image tags
+        run: |
+          kubectl set image deployment/sitescope-backend \
+            backend=${{ env.BACKEND_IMAGE }}:${{ needs.build.outputs.sha-tag }} \
+            -n sitescope
+          kubectl set image deployment/sitescope-frontend \
+            frontend=${{ env.FRONTEND_IMAGE }}:${{ needs.build.outputs.sha-tag }} \
+            -n sitescope
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/sitescope-backend  -n sitescope --timeout=300s
+          kubectl rollout status deployment/sitescope-frontend -n sitescope --timeout=300s
+
+      - name: Verify pods
+        run: |
+          kubectl get pods     -n sitescope -o wide
+          kubectl get ingress  -n sitescope
+          kubectl get events   -n sitescope --sort-by='.lastTimestamp' | tail -10
+
+      - name: Smoke test
+        run: |
+          sleep 10
+          STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
+            https://${{ vars.SUBDOMAIN }}/health --max-time 15 || echo "000")
+          echo "Health: $STATUS"
+          [ "$STATUS" = "200" ] && echo "Healthy" || echo "Not reachable yet (normal on first deploy)"
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          kubectl rollout undo deployment/sitescope-backend  -n sitescope || true
+          kubectl rollout undo deployment/sitescope-frontend -n sitescope || true

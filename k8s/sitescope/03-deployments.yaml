@@ -1,3 +1,6 @@
+# EDIT REQUIRED:
+#   - image: ghcr.io/${GITHUB_OWNER}/sitescope-backend:${IMAGE_TAG}
+#   - image: ghcr.io/${GITHUB_OWNER}/sitescope-frontend:${IMAGE_TAG}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -6,8 +9,15 @@ metadata:
   namespace: sitescope
   labels:
     app: sitescope-backend
+    version: latest
 spec:
   replicas: 2
+  # Rolling update — zero downtime deploys
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: sitescope-backend
@@ -16,6 +26,10 @@ spec:
       labels:
         app: sitescope-backend
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: node-02
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -23,17 +37,19 @@ spec:
         fsGroup: 1000
       containers:
         - name: backend
-          image: sitescope-backend:latest
-          imagePullPolicy: IfNotPresent
+          # GitHub Actions updates this tag on every push to main
+          image: ghcr.io/${GITHUB_OWNER}/sitescope-backend:${IMAGE_TAG}
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000
+              name: http
           envFrom:
             - configMapRef:
                 name: sitescope-config
           resources:
             requests:
               memory: "128Mi"
-              cpu: "125m"
+              cpu: "100m"
             limits:
               memory: "256Mi"
               cpu: "250m"
@@ -44,6 +60,7 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 30
             failureThreshold: 3
+            timeoutSeconds: 5
           readinessProbe:
             httpGet:
               path: /health
@@ -51,19 +68,33 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
             failureThreshold: 3
+            timeoutSeconds: 3
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false  # SQLite needs write access
             capabilities:
-              drop:
-                - ALL
+              drop: ["ALL"]
           volumeMounts:
-            - name: sitescope-data
+            - name: data
               mountPath: /app/data
       volumes:
-        - name: sitescope-data
+        - name: data
           persistentVolumeClaim:
-            claimName: sitescope-data-pvc
+            claimName: sitescope-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sitescope-backend
+  namespace: sitescope
+spec:
+  type: ClusterIP
+  selector:
+    app: sitescope-backend
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
 
 ---
 apiVersion: apps/v1
@@ -75,6 +106,11 @@ metadata:
     app: sitescope-frontend
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: sitescope-frontend
@@ -83,20 +119,25 @@ spec:
       labels:
         app: sitescope-frontend
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: node-02
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       securityContext:
         runAsNonRoot: true
         runAsUser: 1001
         runAsGroup: 1001
       containers:
         - name: frontend
-          image: sitescope-frontend:latest
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/${GITHUB_OWNER}/sitescope-frontend:${IMAGE_TAG}
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
+              name: http
           resources:
             requests:
-              memory: "64Mi"
-              cpu: "50m"
+              memory: "32Mi"
+              cpu: "25m"
             limits:
               memory: "128Mi"
               cpu: "100m"
@@ -116,8 +157,7 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
-              drop:
-                - ALL
+              drop: ["ALL"]
           volumeMounts:
             - name: nginx-cache
               mountPath: /var/cache/nginx
@@ -128,3 +168,18 @@ spec:
           emptyDir: {}
         - name: nginx-run
           emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sitescope-frontend
+  namespace: sitescope
+spec:
+  type: ClusterIP
+  selector:
+    app: sitescope-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
