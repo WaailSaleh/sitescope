@@ -1,4 +1,5 @@
 import asyncio
+import os
 import re
 import time
 import logging
@@ -16,6 +17,15 @@ BROWSER_UA = (
 )
 
 DOH_URL = "https://cloudflare-dns.com/dns-query"
+
+# Tor SOCKS5 proxy — set TOR_PROXY=socks5h://127.0.0.1:9050 to enable.
+# socks5h:// (not socks5://) routes DNS through Tor too — prevents DNS leaks.
+# When running as sidecar, Tor listens on localhost:9050 inside the pod.
+_TOR_PROXY = os.getenv("TOR_PROXY", "").strip() or None
+if _TOR_PROXY:
+    logger.info(f"Tor proxy enabled: {_TOR_PROXY}")
+else:
+    logger.info("Tor proxy disabled — set TOR_PROXY=socks5h://127.0.0.1:9050 to enable")
 
 # --- Compiled regex patterns (checked for ReDoS safety) ---
 # Using possessive/atomic equivalents where Python allows; kept linear.
@@ -533,12 +543,20 @@ async def analyze_target(url: str) -> dict:
     domain = parsed.hostname or ""
     scanned_at = int(time.time())
 
+    # Build proxy config — only set if TOR_PROXY env var is present
+    # Tor adds ~2s latency per request; timeouts are increased accordingly
+    proxy_kwargs = {}
+    if _TOR_PROXY:
+        proxy_kwargs["proxy"] = _TOR_PROXY
+        logger.info(f"Scan routing through Tor: {url}")
+
     async with httpx.AsyncClient(
         headers={"User-Agent": BROWSER_UA},
         follow_redirects=True,
         max_redirects=3,
-        timeout=12.0,
+        timeout=30.0 if _TOR_PROXY else 12.0,  # Tor is slower
         verify=True,
+        **proxy_kwargs,
     ) as client:
         # Passes 1 and 2 must run first (sequential — 2 depends on 1's HTML)
         headers_result, html, status_code = await _pass1_headers(url, client)

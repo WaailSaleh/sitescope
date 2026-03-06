@@ -12,7 +12,6 @@ metadata:
     version: latest
 spec:
   replicas: 2
-  # Rolling update — zero downtime deploys
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -28,6 +27,13 @@ spec:
     spec:
       nodeSelector:
         kubernetes.io/hostname: node-02
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: sitescope-backend
       imagePullSecrets:
         - name: ghcr-pull-secret
       securityContext:
@@ -37,7 +43,6 @@ spec:
         fsGroup: 1000
       containers:
         - name: backend
-          # GitHub Actions updates this tag on every push to main
           image: ghcr.io/${GITHUB_OWNER}/sitescope-backend:${IMAGE_TAG}
           imagePullPolicy: Always
           ports:
@@ -48,6 +53,9 @@ spec:
                 name: sitescope-config
             - secretRef:
                 name: sitescope-postgres-secret
+          env:
+            - name: TOR_PROXY
+              value: "socks5h://127.0.0.1:9050"
           resources:
             requests:
               memory: "256Mi"
@@ -75,6 +83,45 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+
+        # Tor sidecar — SOCKS5 proxy on localhost:9050
+        # peterdavehello/tor-socks-proxy: ~10MB, no relay/exit node function
+        # All outbound scan traffic from the backend routes through this
+        - name: tor
+          image: peterdavehello/tor-socks-proxy:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9050
+              name: socks5
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "25m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          livenessProbe:
+            tcpSocket:
+              port: 9050
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: 9050
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_BIND_SERVICE"]
+          volumeMounts:
+            - name: tor-data
+              mountPath: /var/lib/tor
+
+      volumes:
+        - name: tor-data
+          emptyDir: {}
 
 ---
 apiVersion: v1
@@ -116,6 +163,13 @@ spec:
     spec:
       nodeSelector:
         kubernetes.io/hostname: node-02
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: sitescope-frontend
       imagePullSecrets:
         - name: ghcr-pull-secret
       securityContext:
