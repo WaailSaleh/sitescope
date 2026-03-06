@@ -6,21 +6,10 @@
 # Fork this repo, set your own variables, and it works for you.
 #
 # GITHUB VARIABLES (Settings → Secrets and variables → Actions → Variables tab)
-# These are not secret — they appear in logs:
-#
-#   DOMAIN          Root domain, e.g. jidka.org
 #   SUBDOMAIN       Full app subdomain, e.g. sitescope.jidka.org
-#   ACME_EMAIL      Email for Let's Encrypt expiry notices
-#   CF_ZONE_ID      Cloudflare Zone ID (right sidebar on domain page)
-#   CF_RECORD_ID    Cloudflare A record ID for the root domain
-#   CF_RECORD_NAME  Root A record name, e.g. jidka.org
 #
 # GITHUB SECRETS (Settings → Secrets and variables → Actions → Secrets tab)
-# These are encrypted and never appear in logs:
-#
-#   KUBE_CONFIG     base64-encoded kubeconfig (see k8s/KUBECONFIG_SETUP.sh)
 #   GHCR_TOKEN      GitHub PAT with packages:write scope
-#   CF_API_TOKEN    Cloudflare API token with Zone:DNS:Edit permission
 # =============================================================================
 
 name: Build & Deploy
@@ -148,43 +137,21 @@ jobs:
       - name: Verify cluster connection
         run: kubectl cluster-info --request-timeout=10s
 
-      # Render all manifests — substitute GitHub Variables into placeholders
-      # This means the YAML files in the repo have no hardcoded values
       - name: Render manifests
         env:
-          DOMAIN:          ${{ vars.DOMAIN }}
-          SUBDOMAIN:       ${{ vars.SUBDOMAIN }}
-          ACME_EMAIL:      ${{ vars.ACME_EMAIL }}
-          CF_ZONE_ID:              ${{ vars.CF_ZONE_ID }}
-          CF_RECORD_ID:            ${{ vars.CF_RECORD_ID }}
-          CF_WILDCARD_RECORD_ID:   ${{ vars.CF_WILDCARD_RECORD_ID }}
-          CF_RECORD_NAME:          ${{ vars.CF_RECORD_NAME }}
-          GITHUB_OWNER:    waailsaleh
-          IMAGE_TAG:       ${{ needs.build.outputs.sha-tag }}
-          CF_API_TOKEN:    ${{ secrets.CF_API_TOKEN }}
+          SUBDOMAIN: ${{ vars.SUBDOMAIN }}
+          GITHUB_OWNER: waailsaleh
+          IMAGE_TAG:    ${{ needs.build.outputs.sha-tag }}
         run: |
-          mkdir -p /tmp/rendered/cluster-bootstrap /tmp/rendered/ddns /tmp/rendered/sitescope
-
-          # envsubst replaces ${VAR} placeholders with real values at deploy time
-          for f in k8s/cluster-bootstrap/*.yaml; do
-            envsubst < "$f" > "/tmp/rendered/cluster-bootstrap/$(basename $f)"
-          done
-          for f in k8s/ddns/*.yaml; do
-            envsubst < "$f" > "/tmp/rendered/ddns/$(basename $f)"
-          done
+          mkdir -p /tmp/rendered/sitescope
           for f in k8s/sitescope/*.yaml; do
             envsubst < "$f" > "/tmp/rendered/sitescope/$(basename $f)"
           done
 
-      - name: Apply cluster-bootstrap (idempotent)
-        run: kubectl apply -f /tmp/rendered/cluster-bootstrap/
-
       - name: Apply SiteScope manifests
         run: kubectl apply -f /tmp/rendered/sitescope/
 
-      # cloudflared tunnel — no envsubst needed, applied directly from repo
-      # The tunnel token secret is created manually (one-time, not managed by CI):
-      #   kubectl create secret generic tunnel-token --from-literal=token=TOKEN -n cloudflared
+      # cloudflared tunnel — token secret is managed manually, never by CI
       - name: Apply cloudflared tunnel
         run: kubectl apply -f k8s/cloudflared/00-namespace.yaml -f k8s/cloudflared/02-deployment.yaml
 
@@ -204,9 +171,9 @@ jobs:
 
       - name: Verify pods
         run: |
-          kubectl get pods     -n sitescope -o wide
-          kubectl get ingress  -n sitescope
-          kubectl get events   -n sitescope --sort-by='.lastTimestamp' | tail -10
+          kubectl get pods    -n sitescope -o wide
+          kubectl get ingress -n sitescope
+          kubectl get events  -n sitescope --sort-by='.lastTimestamp' | tail -10
 
       - name: Smoke test
         run: |
