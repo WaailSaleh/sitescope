@@ -119,7 +119,7 @@ export default function ScanInput({ onScanStart, sessionStats, statsLoading }) {
         <input
           type="text"
           value={url}
-          onChange={e => setUrl(e.target.value)}
+          onChange={e => setUrl(e.target.value.toLowerCase())}
           onKeyDown={handleKeyDown}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}

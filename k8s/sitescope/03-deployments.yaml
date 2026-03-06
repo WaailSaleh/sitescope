@@ -55,7 +55,7 @@ spec:
                 name: sitescope-postgres-secret
           env:
             - name: TOR_PROXY
-              value: "socks5h://127.0.0.1:9050"
+              value: "socks5://127.0.0.1:9050"
           resources:
             requests:
               memory: "256Mi"
