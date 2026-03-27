@@ -5,6 +5,7 @@
 
 # ── Python ───────────────────────────────────────────────────────────────────
 backend/.venv/
+backend/venv/
 __pycache__/
 *.py[cod]
 *.pyo
@@ -47,3 +48,4 @@ Thumbs.db
 .idea/
 .vscode/
 *.code-workspace
+ 
