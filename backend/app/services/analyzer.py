@@ -31,7 +31,7 @@ else:
 _SHARED_TRANSPORT = httpx.AsyncHTTPTransport(
     limits=httpx.Limits(max_connections=100, max_keepalive_connections=20)
 )
-_SHARED_PROXY_TRANSPORT = httpx.AsyncProxyTransport(
+_SHARED_PROXY_TRANSPORT = httpx.AsyncHTTPTransport(
     proxy=_TOR_PROXY,
     limits=httpx.Limits(max_connections=100, max_keepalive_connections=20)
 ) if _TOR_PROXY else None
