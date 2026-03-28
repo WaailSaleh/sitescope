@@ -2,6 +2,7 @@ import ipaddress
 import time
 import re
 import logging
+import os
 from urllib.parse import urlparse
 
 import dns.resolver
