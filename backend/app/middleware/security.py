@@ -97,8 +97,17 @@ async def resolve_and_validate(url: str) -> tuple[bool, str]:
         pass  # It's a domain name, proceed to DNS resolution
 
     # DNS resolution — fail closed
+    # Use Tor's DNSPort (127.0.0.1:8853) when available so SSRF validation
+    # queries route through Tor and don't leak to the system resolver.
     try:
-        resolver = dns.resolver.Resolver()
+        resolver = dns.resolver.Resolver(configure=False)
+        tor_dns = os.getenv("TOR_DNS", "").strip()
+        if tor_dns:
+            host, _, port_str = tor_dns.rpartition(":")
+            resolver.nameservers = [host or "127.0.0.1"]
+            resolver.port = int(port_str) if port_str.isdigit() else 53
+        else:
+            resolver = dns.resolver.Resolver()
         resolver.timeout = 5
         resolver.lifetime = 5
 
