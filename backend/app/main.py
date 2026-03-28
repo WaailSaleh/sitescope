@@ -6,6 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from prometheus_fastapi_instrumentator import Instrumentator
+
 from app.database import init_db, close_pool
 from app.middleware.security import SecurityHeadersMiddleware, RateLimitMiddleware
 from app.routers import analyze, session
@@ -54,6 +56,8 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(analyze.router)
 app.include_router(session.router)
+
+Instrumentator().instrument(app).expose(app, include_in_schema=False)
 
 
 @app.get("/health")
