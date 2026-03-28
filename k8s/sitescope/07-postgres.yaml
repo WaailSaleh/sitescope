@@ -1,3 +1,13 @@
+# DO NOT commit a real password here.
+# Create this secret imperatively on the cluster before applying:
+#
+#   PG_PASS=$(openssl rand -base64 32 | tr -d /=+ | head -c 32)
+#   kubectl create secret generic sitescope-postgres-secret \
+#     --namespace sitescope \
+#     --from-literal=POSTGRES_PASSWORD="$PG_PASS" \
+#     --from-literal=DATABASE_URL="postgresql://sitescope:${PG_PASS}@sitescope-postgres:5432/sitescope"
+#
+# This file is a reference template only.
 ---
 apiVersion: v1
 kind: Secret
