@@ -22,10 +22,11 @@ export default function ScanInput({ onScanStart, sessionStats, statsLoading }) {
 
   const handleScan = async () => {
     setError(null)
-    const trimmed = url.trim()
+    let trimmed = url.trim()
     if (!trimmed) { setError('Enter a target URL'); return }
+    if (!/^https?:\/\//i.test(trimmed)) trimmed = 'https://' + trimmed
     if (trimmed.length > 2048) { setError('URL too long (max 2048 chars)'); return }
-    if (!isValidUrl(trimmed)) { setError('Invalid URL — must start with http:// or https://'); return }
+    if (!isValidUrl(trimmed)) { setError('Invalid URL'); return }
 
     setLoading(true)
     try {

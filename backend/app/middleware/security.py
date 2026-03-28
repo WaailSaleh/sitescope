@@ -100,34 +100,56 @@ async def resolve_and_validate(url: str) -> tuple[bool, str]:
     # DNS resolution — fail closed
     # Use Tor's DNSPort (127.0.0.1:8853) when available so SSRF validation
     # queries route through Tor and don't leak to the system resolver.
-    try:
-        resolver = dns.resolver.Resolver(configure=False)
-        tor_dns = os.getenv("TOR_DNS", "").strip()
-        if tor_dns:
-            host, _, port_str = tor_dns.rpartition(":")
-            resolver.nameservers = [host or "127.0.0.1"]
-            resolver.port = int(port_str) if port_str.isdigit() else 53
-        else:
-            resolver = dns.resolver.Resolver()
-        resolver.timeout = 5
-        resolver.lifetime = 5
+    # Falls back to 1.1.1.1/8.8.8.8 if the primary resolver returns SERVFAIL.
+    tor_dns = os.getenv("TOR_DNS", "").strip()
+    primary = dns.resolver.Resolver(configure=False)
+    if tor_dns:
+        host, _, port_str = tor_dns.rpartition(":")
+        primary.nameservers = [host or "127.0.0.1"]
+        primary.port = int(port_str) if port_str.isdigit() else 53
+    else:
+        primary.nameservers = ["1.1.1.1", "8.8.8.8"]
+    primary.timeout = 5
+    primary.lifetime = 5
 
-        answers = resolver.resolve(hostname, 'A')
+    def _check_answers(answers) -> tuple[bool, str] | None:
+        """Return (False, reason) if any resolved IP is private, else None."""
         for rdata in answers:
             ip_str = str(rdata)
             if is_private_ip(ip_str):
                 return False, f"Hostname resolves to private/reserved IP: {ip_str}"
+        return None
 
-        # Also check AAAA
+    def _resolve_with(resolver: dns.resolver.Resolver) -> tuple[bool, str]:
+        answers = resolver.resolve(hostname, 'A')
+        bad = _check_answers(answers)
+        if bad:
+            return bad
         try:
-            aaaa_answers = resolver.resolve(hostname, 'AAAA')
-            for rdata in aaaa_answers:
-                ip_str = str(rdata)
-                if is_private_ip(ip_str):
-                    return False, f"Hostname resolves to private/reserved IPv6: {ip_str}"
+            aaaa = resolver.resolve(hostname, 'AAAA')
+            bad = _check_answers(aaaa)
+            if bad:
+                return bad
         except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, dns.exception.Timeout):
-            pass  # No AAAA records is fine
+            pass
+        return True, "OK"
 
+    try:
+        return _resolve_with(primary)
+    except dns.resolver.NXDOMAIN:
+        return False, "Hostname does not exist (NXDOMAIN)"
+    except dns.resolver.NoAnswer:
+        return False, "DNS returned no answer"
+    except Exception as primary_err:
+        logger.warning(f"Primary DNS failed for {hostname}: {primary_err} — trying fallback")
+
+    # Fallback: public resolvers (only reached when primary fails)
+    fallback = dns.resolver.Resolver(configure=False)
+    fallback.nameservers = ["1.1.1.1", "8.8.8.8"]
+    fallback.timeout = 5
+    fallback.lifetime = 5
+    try:
+        return _resolve_with(fallback)
     except dns.resolver.NXDOMAIN:
         return False, "Hostname does not exist (NXDOMAIN)"
     except dns.resolver.NoAnswer:
