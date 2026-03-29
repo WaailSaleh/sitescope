@@ -145,10 +145,13 @@ jobs:
         run: |
           mkdir -p /tmp/rendered/sitescope
           for f in k8s/sitescope/*.yaml; do
+            # Skip secrets — managed imperatively on the cluster, never by CI
+            [[ "$(basename $f)" == *secret* ]] && continue
             envsubst < "$f" > "/tmp/rendered/sitescope/$(basename $f)"
           done
 
       - name: Apply SiteScope manifests
+        # 07-postgres.yaml (secrets) is intentionally excluded — see Render step
         run: kubectl apply -f /tmp/rendered/sitescope/
 
       # cloudflared tunnel — token secret is managed manually, never by CI
